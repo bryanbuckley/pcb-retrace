@@ -13,17 +13,18 @@ class StitchEditor {
 		this.modal = document.getElementById('stitch-modal');
 		this.srcId = null; this.dstId = null;
 		this.points = [];
+		this.pendingPoint = null;
 		this.colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#88ff00'];
 
 		this.viewSrc = new PanZoomCanvas('stitch-canvas-src',
 			(c, k) => this.drawPts(c, k, 's'),
-			null,
+			(x, y, e) => this.addPoint(x, y, 's', e),
 			(x, y, m, i) => this.hit(x, y, m, i, 's')
 		);
 
 		this.viewDst = new PanZoomCanvas('stitch-canvas-dst',
 			(c, k) => this.drawPts(c, k, 'd'),
-			null,
+			(x, y, e) => this.addPoint(x, y, 'd', e),
 			(x, y, m, i) => this.hit(x, y, m, i, 'd')
 		);
 
@@ -99,6 +100,7 @@ class StitchEditor {
 
 	setGrid(n, explicitH = null, explicitInvH = null) {
 		if(!this.viewSrc.bmp || !this.viewDst.bmp) return;
+		this.pendingPoint = null;
 		let H = explicitH;
 		let invH = explicitInvH;
 		if (!H && this.points.length >= 4) {
@@ -146,6 +148,34 @@ class StitchEditor {
 
 	clearPoints() {
 		this.points = [];
+		this.pendingPoint = null;
+		this.refresh();
+	}
+
+	addPoint(x, y, side, e) {
+		if (e.button !== 0) return;
+
+		const point = { x, y };
+		if (!this.pendingPoint) {
+			this.pendingPoint = { side, point };
+			this.refresh();
+			return;
+		}
+
+		if (this.pendingPoint.side === side) {
+			this.pendingPoint = { side, point };
+			this.refresh();
+			return;
+		}
+
+		const source = side === 's' ? point : this.pendingPoint.point;
+		const destination = side === 'd' ? point : this.pendingPoint.point;
+		this.points.push({
+			s: source,
+			d: destination,
+			color: this.colors[this.points.length % this.colors.length]
+		});
+		this.pendingPoint = null;
 		this.refresh();
 	}
 
@@ -181,6 +211,7 @@ class StitchEditor {
 		});
 
 		this.points = [];
+		this.pendingPoint = null;
 		const existing = await this.db.getOverlapsForPair(srcImgId, dstImgId);
 
 		let shouldFlip = false;
@@ -272,6 +303,27 @@ class StitchEditor {
 			ctx.lineWidth = 3*ik; ctx.strokeStyle='black'; ctx.strokeText(label, drawX+8*ik, pt.y-8*ik);
 			ctx.fillStyle = 'white'; ctx.fillText(label, drawX+8*ik, pt.y-8*ik);
 		});
+
+		if (this.pendingPoint && this.pendingPoint.side === side) {
+			const pt = this.pendingPoint.point;
+			const drawX = isMirrored ? width - pt.x : pt.x;
+			const r = 10 * ik, len = 20 * ik, gap = 2 * ik;
+			const path = (c) => {
+				c.beginPath(); c.arc(drawX, pt.y, r, 0, Math.PI * 2);
+				c.moveTo(drawX-len, pt.y); c.lineTo(drawX-gap, pt.y);
+				c.moveTo(drawX+gap, pt.y); c.lineTo(drawX+len, pt.y);
+				c.moveTo(drawX, pt.y-len); c.lineTo(drawX, pt.y-gap);
+				c.moveTo(drawX, pt.y+gap); c.lineTo(drawX, pt.y+len);
+			};
+			ctx.strokeStyle = 'black'; ctx.lineWidth = 3 * ik; path(ctx); ctx.stroke();
+			ctx.strokeStyle = this.colors[this.points.length % this.colors.length];
+			ctx.lineWidth = 1.5 * ik; path(ctx); ctx.stroke();
+			ctx.font = `bold ${14 * ik}px sans-serif`;
+			ctx.lineWidth = 3 * ik; ctx.strokeStyle = 'black';
+			ctx.strokeText((this.points.length + 1).toString(), drawX+8*ik, pt.y-8*ik);
+			ctx.fillStyle = 'white';
+			ctx.fillText((this.points.length + 1).toString(), drawX+8*ik, pt.y-8*ik);
+		}
 	}
 
 	hit(x, y, mode, idx, side) {
