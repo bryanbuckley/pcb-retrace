@@ -276,11 +276,13 @@ class StitchEditor {
 
 	hit(x, y, mode, idx, side) {
 		if(mode==='check') {
-			 for(let i=this.points.length-1; i>=0; i--) {
-				 const pt = (side==='s')?this.points[i].s:this.points[i].d;
-				 // FIX: Use raw image coordinates (PanZoomCanvas handles mirror logic in getImgCoords)
-				 if(Math.hypot(x-pt.x, y-pt.y) < 20) return i;
-			 }
+			const view = (side === 's') ? this.viewSrc : this.viewDst;
+			const hitRadius = 20 / view.t.k;
+			for(let i=this.points.length-1; i>=0; i--) {
+				const pt = (side==='s')?this.points[i].s:this.points[i].d;
+				// Keep the hit area at 20 screen pixels regardless of zoom.
+				if(Math.hypot(x-pt.x, y-pt.y) < hitRadius) return i;
+			}
 			 return -1;
 		} else if(mode==='move') {
 			const pt = (side==='s')?this.points[idx].s:this.points[idx].d;
