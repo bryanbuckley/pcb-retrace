@@ -23,8 +23,8 @@ jobs:
           PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_SIGNATURE_PAT }}
         with:
           path-to-signatures: 'pcb-retrace-signatures.json'
-          path-to-cla: 'https://github.com/dev-lab/pcb-retrace/blob/main/CLA.md'
+          path-to-document: 'https://github.com/dev-lab/pcb-retrace/blob/main/CLA.md'
           remote-organization-name: 'dev-lab'
           remote-repository-name: 'dev-lab-cla-signatures'
           branch: 'main'
-          allowlist: 'bot*,'
+          allowlist: 'bot*'
