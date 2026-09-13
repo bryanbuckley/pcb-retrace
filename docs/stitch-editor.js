@@ -13,17 +13,25 @@ class StitchEditor {
 		this.modal = document.getElementById('stitch-modal');
 		this.srcId = null; this.dstId = null;
 		this.points = [];
+		this.pendingPoint = null;
 		this.colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff', '#ffffff', '#ff8800', '#88ff00'];
+		this.onKeyDown = (e) => {
+			if (e.key !== 'Escape' || this.modal.style.display !== 'flex' || !this.pendingPoint) return;
+			e.preventDefault();
+			e.stopImmediatePropagation();
+			this.cancelPendingPoint();
+		};
+		window.addEventListener('keydown', this.onKeyDown, true);
 
 		this.viewSrc = new PanZoomCanvas('stitch-canvas-src',
 			(c, k) => this.drawPts(c, k, 's'),
-			null,
+			(x, y, e) => this.addPoint(x, y, 's', e),
 			(x, y, m, i) => this.hit(x, y, m, i, 's')
 		);
 
 		this.viewDst = new PanZoomCanvas('stitch-canvas-dst',
 			(c, k) => this.drawPts(c, k, 'd'),
-			null,
+			(x, y, e) => this.addPoint(x, y, 'd', e),
 			(x, y, m, i) => this.hit(x, y, m, i, 'd')
 		);
 
@@ -99,6 +107,7 @@ class StitchEditor {
 
 	setGrid(n, explicitH = null, explicitInvH = null) {
 		if(!this.viewSrc.bmp || !this.viewDst.bmp) return;
+		this.pendingPoint = null;
 		let H = explicitH;
 		let invH = explicitInvH;
 		if (!H && this.points.length >= 4) {
@@ -146,6 +155,40 @@ class StitchEditor {
 
 	clearPoints() {
 		this.points = [];
+		this.pendingPoint = null;
+		this.refresh();
+	}
+
+	cancelPendingPoint() {
+		if (!this.pendingPoint) return;
+		this.pendingPoint = null;
+		this.refresh();
+	}
+
+	addPoint(x, y, side, e) {
+		if (e.button !== 0) return;
+
+		const point = { x, y };
+		if (!this.pendingPoint) {
+			this.pendingPoint = { side, point };
+			this.refresh();
+			return;
+		}
+
+		if (this.pendingPoint.side === side) {
+			this.pendingPoint = { side, point };
+			this.refresh();
+			return;
+		}
+
+		const source = side === 's' ? point : this.pendingPoint.point;
+		const destination = side === 'd' ? point : this.pendingPoint.point;
+		this.points.push({
+			s: source,
+			d: destination,
+			color: this.colors[this.points.length % this.colors.length]
+		});
+		this.pendingPoint = null;
 		this.refresh();
 	}
 
@@ -181,6 +224,7 @@ class StitchEditor {
 		});
 
 		this.points = [];
+		this.pendingPoint = null;
 		const existing = await this.db.getOverlapsForPair(srcImgId, dstImgId);
 
 		let shouldFlip = false;
@@ -245,42 +289,54 @@ class StitchEditor {
 
 	refresh() { this.viewSrc.draw(); this.viewDst.draw(); }
 
-	drawPts(ctx, k, side) {
+	drawPoint(ctx, k, side, point, label, color) {
 		const ik = 1/k;
 		const isMirrored = (side === 'd' && this.viewDst.isMirrored);
 		const width = (side === 'd' && this.viewDst.bmp) ? this.viewDst.bmp.width : 0;
+		const drawX = isMirrored ? width - point.x : point.x;
+		const r=10*ik, len=20*ik, gap=2*ik;
+		const path = (c) => {
+			c.beginPath(); c.arc(drawX, point.y, r, 0, Math.PI*2);
+			c.moveTo(drawX-len, point.y); c.lineTo(drawX-gap, point.y);
+			c.moveTo(drawX+gap, point.y); c.lineTo(drawX+len, point.y);
+			c.moveTo(drawX, point.y-len); c.lineTo(drawX, point.y-gap);
+			c.moveTo(drawX, point.y+gap); c.lineTo(drawX, point.y+len);
+		};
 
+		ctx.strokeStyle='black'; ctx.lineWidth=3*ik; path(ctx); ctx.stroke();
+		ctx.strokeStyle=color; ctx.lineWidth=1.5*ik; path(ctx); ctx.stroke();
+		ctx.strokeStyle='black'; ctx.lineWidth = 3*ik;
+		ctx.font = `bold ${14*ik}px sans-serif`;
+		ctx.strokeText(label, drawX+8*ik, point.y-8*ik);
+		ctx.fillStyle = 'white';
+		ctx.fillText(label, drawX+8*ik, point.y-8*ik);
+	}
+
+	drawPts(ctx, k, side) {
 		this.points.forEach((p, idx) => {
 			const pt = (side==='s') ? p.s : p.d;
-			const label = (idx + 1).toString();
-			let drawX = pt.x;
-			if (isMirrored) drawX = width - pt.x;
-
-			const r=10*ik, len=20*ik, gap=2*ik;
-			const path = (c) => {
-				c.beginPath(); c.arc(drawX, pt.y, r, 0, Math.PI*2);
-				c.moveTo(drawX-len, pt.y); c.lineTo(drawX-gap, pt.y);
-				c.moveTo(drawX+gap, pt.y); c.lineTo(drawX+len, pt.y);
-				c.moveTo(drawX, pt.y-len); c.lineTo(drawX, pt.y-gap);
-				c.moveTo(drawX, pt.y+gap); c.lineTo(drawX, pt.y+len);
-			};
-
-			ctx.strokeStyle='black'; ctx.lineWidth=3*ik; path(ctx); ctx.stroke();
-			ctx.strokeStyle=p.color; ctx.lineWidth=1.5*ik; path(ctx); ctx.stroke();
-
-			ctx.font = `bold ${14*ik}px sans-serif`;
-			ctx.lineWidth = 3*ik; ctx.strokeStyle='black'; ctx.strokeText(label, drawX+8*ik, pt.y-8*ik);
-			ctx.fillStyle = 'white'; ctx.fillText(label, drawX+8*ik, pt.y-8*ik);
+			this.drawPoint(ctx, k, side, pt, (idx + 1).toString(), p.color);
 		});
+
+		if (this.pendingPoint && this.pendingPoint.side === side) {
+			const pt = this.pendingPoint.point;
+			this.drawPoint(ctx, k, side, pt, (this.points.length + 1).toString(), this.colors[this.points.length % this.colors.length]);
+		}
 	}
 
 	hit(x, y, mode, idx, side) {
 		if(mode==='check') {
-			 for(let i=this.points.length-1; i>=0; i--) {
-				 const pt = (side==='s')?this.points[i].s:this.points[i].d;
-				 // FIX: Use raw image coordinates (PanZoomCanvas handles mirror logic in getImgCoords)
-				 if(Math.hypot(x-pt.x, y-pt.y) < 20) return i;
-			 }
+			const view = (side === 's') ? this.viewSrc : this.viewDst;
+			const hitRadius = 20 / view.t.k;
+			for(let i=this.points.length-1; i>=0; i--) {
+				const pt = (side==='s')?this.points[i].s:this.points[i].d;
+				// Keep the hit area at 20 screen pixels regardless of zoom.
+				if(Math.hypot(x-pt.x, y-pt.y) < hitRadius) {
+					// clear any pending marker if clicking on an existing point
+					this.cancelPendingPoint();
+					return i;
+				}
+			}
 			 return -1;
 		} else if(mode==='move') {
 			const pt = (side==='s')?this.points[idx].s:this.points[idx].d;
