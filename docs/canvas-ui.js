@@ -153,7 +153,7 @@ class PanZoomCanvas {
 		if (index > -1) this.evCache.splice(index, 1);
 		if (this.evCache.length < 2) this.prevDiff = -1;
 
-		if (this.evCache.length === 0) {
+		if (this.evCache.length === 0 && this.isDragging) {
 			if (this.totalDragDist < 20) {
 				if (this.activePtIdx === -1 && this.onClick) {
 					const coords = this.getImgCoords(e.clientX, e.clientY);
